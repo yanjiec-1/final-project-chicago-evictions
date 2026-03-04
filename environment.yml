@@ -1,9 +1,17 @@
-name: fire_analysis
+name: final_project_chicago_evictions
+
 channels:
   - conda-forge
+  - defaults
+
 dependencies:
   - python=3.11
   - pandas
+  - numpy
   - geopandas
   - matplotlib
   - shapely
+  - fiona
+  - pyogrio
+  - streamlit
+  - plotly
