@@ -5,7 +5,7 @@ This project examines eviction filing patterns in Chicago and asks whether evict
 ## Streamlit Dashboard
 
 Streamlit Community Cloud app:  
-[Insert your Streamlit app URL here]
+https://final-project-chicago-evictions-fbssvq6nw6ygtr9mwsappmf.streamlit.app/
 
 **Note:** If the Streamlit app has not been used in the last 24 hours, it may need to be “woken up.” This is normal behavior on Streamlit Community Cloud and is not a bug.
 
