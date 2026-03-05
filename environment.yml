@@ -14,3 +14,7 @@ dependencies:
   - pyogrio
   - streamlit
   - plotly
+  - altair
+  - pip
+  - pip:
+      - vl-convert-python
