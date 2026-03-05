@@ -85,7 +85,7 @@ def main():
     p95 = filtered["eviction_filings_rate"].quantile(0.95)
 
     # create a choropleth map
-    fig_map = px.choropleth_mapbox(
+    fig_map = px.choropleth_map(
         filtered,
         geojson=geojson,
         locations="tract",
@@ -102,7 +102,6 @@ def main():
             "pct_black": ":.2%",
             "pct_latinx": ":.2%",
         },
-        mapbox_style="carto-positron",
         zoom=9.2,
         center={"lat": 41.8781, "lon": -87.6298},
         opacity=0.7,
@@ -111,7 +110,7 @@ def main():
     # update the layout of the map
     fig_map.update_layout(margin={"r": 0, "t": 0, "l": 0, "b": 0})
     # plot the map
-    st.plotly_chart(fig_map, use_container_width=True)
+    st.plotly_chart(fig_map, width="stretch")
 
     # add a subheader for the interactive scatter plot
     st.subheader("Interactive Scatter Plot")
@@ -138,7 +137,7 @@ def main():
     # update the layout of the scatter plot
     fig_scatter.update_layout(margin={"r": 20, "t": 20, "l": 20, "b": 20})
     # plot the scatter plot
-    st.plotly_chart(fig_scatter, use_container_width=True)
+    st.plotly_chart(fig_scatter, width="stretch")
 
     # add a subheader for the top tracts by eviction filing rate
     st.subheader("Top Tracts by Eviction Filing Rate")
@@ -158,7 +157,7 @@ def main():
         .reset_index(drop=True)
     )
     # display the top tracts by eviction filing rate
-    st.dataframe(top, use_container_width=True)
+    st.dataframe(top, width="stretch")
 
 # main function to run the app
 if __name__ == "__main__":
