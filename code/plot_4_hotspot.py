@@ -16,7 +16,6 @@ FIG_DIR = REPO_DIR / "figures"
 def main():
     # load data
     df_path = DERIVED_DIR / "chicago_eviction_analytic_2019.csv"
-    # read the csv file into a pandas dataframe
     df = pd.read_csv(df_path)
 
     # city medians for context
@@ -41,49 +40,65 @@ def main():
         ),
         axis=1
     )
+
     # make the tract column a string column
     top["tract"] = top["tract"].astype(str)
 
+    # create label columns for tooltip
+    top["eviction_rate_label"] = top["eviction_filings_rate"].round(0).astype(int).astype(str) + "%"
+    top["income_label"] = "$" + top["median_household_income"].round(0).astype(int).map("{:,}".format)
+    top["poverty_label"] = (top["poverty_rate"] * 100).round(0).astype(int).astype(str) + "%"
+    top["minority_label"] = (top["minority_share"] * 100).round(0).astype(int).astype(str) + "%"
+
     # create a bar chart
     bars = alt.Chart(top).mark_bar().encode(
-            x=alt.X(
-                "eviction_filings_rate:Q",
-                title="Eviction Filing Rate"
-            ),
-            y=alt.Y(
-                "tract:N",
-                sort=list(top["tract"]),
-                title="Census Tract"
-            ),
-            tooltip=[
-                alt.Tooltip("tract:N", title="Tract"),
-                alt.Tooltip("eviction_filings_rate:Q", title="Eviction rate", format=".3f"),
-                alt.Tooltip("median_household_income:Q", title="Income", format=",.0f"),
-                alt.Tooltip("poverty_rate:Q", title="Poverty", format=".1%"),
-                alt.Tooltip("minority_share:Q", title="Minority share", format=".1%"),
-            ],
-        )
+        x=alt.X(
+            "eviction_filings_rate:Q",
+            title="Eviction Filing Rate (%)",
+            axis=alt.Axis(labelExpr="datum.value + '%'")
+        ),
+        y=alt.Y(
+            "tract:N",
+            sort=list(top["tract"]),
+            title="Census Tract"
+        ),
+        tooltip=[
+            alt.Tooltip("tract:N", title="Tract"),
+            alt.Tooltip("eviction_rate_label:N", title="Eviction rate"),
+            alt.Tooltip("income_label:N", title="Income"),
+            alt.Tooltip("poverty_label:N", title="Poverty"),
+            alt.Tooltip("minority_label:N", title="Minority share"),
+        ],
+    )
 
     # text labels to the right of bars
-    text = alt.Chart(top).mark_text(align="left", baseline="middle", dx=5, fontSize=11).encode(
-            x=alt.X("eviction_filings_rate:Q"),
-            y=alt.Y("tract:N", sort=list(top["tract"])),
-            text="context_label:N"
-        )
+    text = alt.Chart(top).mark_text(
+        align="left",
+        baseline="middle",
+        dx=5,
+        fontSize=11
+    ).encode(
+        x=alt.X("eviction_filings_rate:Q"),
+        y=alt.Y("tract:N", sort=list(top["tract"])),
+        text="context_label:N"
+    )
 
     # create a chart
     chart = (bars + text).properties(
         title="Top 10 Chicago Census Tracts by Eviction Filing Rate (2019)",
         width=760,
         height=420
-        ).configure_title(fontSize=18, anchor="middle").configure_axis(
-            titleFontSize=13,
-            labelFontSize=11,
-            grid=True,
-            gridColor="#e6e6e6",
-            domainColor="#888888",
-            tickColor="#888888"
-        ).configure_view(stroke=None)
+    ).configure_title(
+        fontSize=18,
+        anchor="middle"
+    ).configure_axis(
+        titleFontSize=13,
+        labelFontSize=11,
+        grid=True,
+        gridColor="#e6e6e6",
+        domainColor="#888888",
+        tickColor="#888888"
+    ).configure_view(stroke=None)
 
     # path to the figure: figures/plot_4_top_tracts_hotspot_context.png
     out_path = FIG_DIR / "plot_4_top_tracts_hotspot_context.png"
@@ -91,11 +106,6 @@ def main():
     # save the chart to the figures directory
     save_altair_png(chart, out_path, scale=3)
     print(f"Saved PNG: {out_path}")
-
-    # save as HTML
-    # html_path = FIG_DIR / "plot_4_top_tracts_hotspot_context.html"
-    # chart.save(html_path)
-    # print(f"Saved HTML: {html_path}")
 
     # also print city medians for reference
     print(
