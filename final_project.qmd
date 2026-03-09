@@ -4,7 +4,7 @@ author:
   - "Group Members:"
   - "Sophia Chen (Tuesday/Thursday 11:00 AM Section, 'yanjiec-1')"
   - "Ziyun Wu (Monday/Wednesday 10:30 AM Section, 'Zianawu')"
-jupyter: dap
+jupyter: final_project_chicago_evictions
 format:
   pdf:
     include-in-header:
@@ -28,11 +28,11 @@ execute:
 
 2.1 Data collection: We combined multiple tract-level datasets for 2019. Eviction filings and tract-level eviction rates come from the Chicago Evictions dataset. Median household income is drawn from the American Community Survey (ACS). We also use 2019 Census tract boundaries (TIGER/Line shapefile) to support tract-level mapping.
 
-2.2 Data cleaning and merging: Using Python and pandas, we cleaned the datasets, standardized tract identifiers (GEOID/tract code), and merged sources into a single tract-level analytic table. In code, the main steps include reading each raw file, ensuring tract identifiers are consistent as strings, dropping or flagging missing values in key variables, and performing left/inner joins so that each tract record contains both eviction outcomes and neighborhood characteristics.
+2.2 Data cleaning and merging: Using Python and pandas, we cleaned the datasets, standardized tract identifiers (GEOID/tract code), and merged sources into a single tract-level analytic table. In code, the main steps include reading each raw file, ensuring tract identifiers are consistent as strings, dropping missing values in key variables, and performing left or inner joins so that each tract record contains both eviction outcomes and neighborhood characteristics.
 
-2.3 Constructing key measures: We calculate an eviction filing rate at the tract level for 2019, defined as eviction filings divided by renter households (expressed as a percentage). We use median household income and minority share as primary neighborhood characteristics. We treat poverty-related measures as supporting context rather than a separate parallel analysis, since income and poverty capture similar dimensions of disadvantage and are strongly correlated. We also note that rates can be unstable for tracts with very small renter-household denominators, which motivates a denominator-based stability filter in the dashboard.
+2.3 Constructing key measures: We calculate an eviction filing rate at the tract level for 2019, defined as eviction filings divided by renter households (expressed as a percentage). We use median household income and minority share as primary neighborhood characteristics. We treat poverty-related measures as supporting context rather than a separate parallel analysis, since income and poverty capture similar dimensions of disadvantage and are strongly correlated. We also note that rates can be unstable for tracts with very small renter-household denominators, so we created a denominator-based stability filter in the dashboard.
 
-2.4 Visualization and analysis: To answer the research question, we created a set of static visualizations and an interactive Streamlit dashboard. The static figures summarize spatial clustering, the relationship between eviction rate and income, differences across minority-share groups, and the highest-rate tracts. The dashboard is designed to go beyond the static plots by enabling interactive subgroup comparison, variable switching, and diagnostic checks for extreme values.
+2.4 Visualization and analysis: To answer the research question, we created a set of static visualizations and an interactive Streamlit dashboard. The static figures summarize spatial clustering, the relationship between eviction rate and income, differences across minority-share groups, and the highest rate tracts. The dashboard is designed to go beyond the static plots by enabling interactive subgroup comparison, variable switching, and diagnostic checks for extreme values.
 
 3. Results from Static Visualizations
 
@@ -50,7 +50,7 @@ execute:
 
 \begin{minipage}{0.47\linewidth}
 \centering
-\includegraphics[width=0.7\linewidth]{figures/plot_1_choropleth_eviction_rate_2019.png}
+\includegraphics[width=0.8\linewidth]{figures/plot_1_choropleth_eviction_rate_2019.png}
 \end{minipage}\hfill
 \begin{minipage}{0.47\linewidth}
 \centering
@@ -61,7 +61,7 @@ execute:
 
 \begin{minipage}{0.47\linewidth}
 \centering
-\includegraphics[width=0.7\linewidth]{figures/plot_3_boxplot_eviction_by_minority_quartile.png}
+\includegraphics[width=0.8\linewidth]{figures/plot_3_boxplot_eviction_by_minority_quartile.png}
 \end{minipage}\hfill
 \begin{minipage}{0.47\linewidth}
 \centering
@@ -80,17 +80,17 @@ We developed a Streamlit dashboard to support exploratory analysis beyond the st
 
 - A table of top tracts by eviction filing rate for the currently filtered subset.
 
-- Filters designed for subgroup comparison and interpretability, including income range and minority share range. We use a minority-share range rather than a one-sided cutoff to support direct comparison between low- and high-minority neighborhoods.
+- Filters designed for subgroup comparison, including income range and minority share range. We use a minority-share range rather than a one-sided cutoff to directly compare low- and high-minority neighborhoods.
 
-- A minimum renter-households filter (default: 200) uses renter households as the denominator of the eviction filing rate and improves stability by reducing the influence of very small denominators that can inflate rates.
+- A minimum renter-households filter (default: 200) uses renter households as the denominator of the eviction filing rate and improves stability by reducing the influence of very small denominators that can inflate eviction filing rates.
 
-- An “extreme tract check” that identifies the tract with the maximum observed eviction filing rate (around 28%). The dashboard displays this tract’s filings count and renter-household denominator so users can interpret unusually high rates more carefully.
+- An extreme tract check that identifies the tract with the maximum observed eviction filing rate (around 28%). The dashboard displays this tract’s filings count and renter-household denominator so users can interpret unusually high rates more carefully.
 
-Overall, the dashboard provides added analytic value by supporting subgroup exploration, variable switching, and extreme-value diagnostics, rather than simply reproducing the static plots.
+Overall, the dashboard provides more analytic value by including subgroup exploration, variable switching, and extreme-value diagnostics, rather than simply reproducing the static plots.
 
-5. Policy Implications: Because the analysis is descriptive, we do not claim tract characteristics cause eviction filings. However, the hotspot ranking and the dashboard identify where filing rates are most concentrated and can support targeting and prioritization. Agencies and community organizations could use the identified high-rate tracts to help prioritize tenant legal aid outreach, eviction diversion programs, and other housing-stability resources. The tract list also provides a starting point for follow-up monitoring and local context review.
+5. Policy Implications: Because the analysis is descriptive, we do not declare tract characteristics cause eviction filings. However, the hotspot ranking and the dashboard identify where filing rates are most concentrated and support tract targeting and prioritization. Agencies and community organizations could use the identified high rate tracts to help prioritize tenant legal aid outreach, eviction diversion programs, and other resources for housing stability. The tract list also provides a starting point for continuous local monitoring.
 
-6. Limitations or Challenges: This analysis is descriptive and cannot establish causal effects. We focus on 2019 only, which provides a clear snapshot but does not capture time dynamics. Eviction filings are not the same as completed evictions, so filings may overstate displacement. We also rely on tract-level measures (including ACS estimates) that carry sampling error and may not reflect within-tract variation. Finally, while the dashboard supports exploration and diagnostics, conclusions remain constrained by the scope and measurement limits of the underlying data.
+6. Limitations or Challenges: This analysis is descriptive and cannot establish causal effects. We focus on 2019 only, which provides a clear snapshot but does not capture time dynamics. Eviction filings are not the same as completed evictions, so filings may overstate displacement. We also rely on tract-level measures (including ACS estimates) that carry sampling error and may not reflect variation within tracts. Finally, while the dashboard provides exploration and diagnostics, conclusions remain constrained by the scope and measurement limits of the underlying data.
 
 ```{python}
 #| echo: false
