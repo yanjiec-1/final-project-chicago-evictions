@@ -1,0 +1,955 @@
+---
+title: "Chicago Eviction Analysis"
+author:
+  - "Group Members:"
+  - "Sophia Chen (Tuesday/Thursday 11:00 AM Section, 'yanjiec-1')"
+  - "Ziyun Wu (Monday/Wednesday 10:30 AM Section, 'Zianawu')"
+jupyter: dap
+format:
+  pdf:
+    include-in-header:
+      text: |
+        % Enable wrapping for Pandoc code blocks in PDF
+        \usepackage{fvextra}
+        \usepackage{float}
+        \usepackage{makecell}
+        \usepackage{booktabs}
+        \DefineVerbatimEnvironment{Highlighting}{Verbatim}{breaklines,commandchars=\\\{\}}
+  html: default
+editor: source
+execute-dir: project
+execute: 
+  echo: false
+---
+
+1. Research Question: This project examines eviction filing patterns across Chicago census tracts. We ask whether eviction filing rates are higher in neighborhoods with lower incomes and higher minority shares, and whether high filing rates cluster geographically within the city.
+
+2. Data and Approach
+
+2.1 Data collection: We combined multiple tract-level datasets for 2019. Eviction filings and tract-level eviction rates come from the Chicago Evictions dataset. Median household income is drawn from the American Community Survey (ACS). We also use 2019 Census tract boundaries (TIGER/Line shapefile) to support tract-level mapping.
+
+2.2 Data cleaning and merging: Using Python and pandas, we cleaned the datasets, standardized tract identifiers (GEOID/tract code), and merged sources into a single tract-level analytic table. In code, the main steps include reading each raw file, ensuring tract identifiers are consistent as strings, dropping or flagging missing values in key variables, and performing left/inner joins so that each tract record contains both eviction outcomes and neighborhood characteristics.
+
+2.3 Constructing key measures: We calculate an eviction filing rate at the tract level for 2019, defined as eviction filings divided by renter households (expressed as a percentage). We use median household income and minority share as primary neighborhood characteristics. We treat poverty-related measures as supporting context rather than a separate parallel analysis, since income and poverty capture similar dimensions of disadvantage and are strongly correlated. We also note that rates can be unstable for tracts with very small renter-household denominators, which motivates a denominator-based stability filter in the dashboard.
+
+2.4 Visualization and analysis: To answer the research question, we created a set of static visualizations and an interactive Streamlit dashboard. The static figures summarize spatial clustering, the relationship between eviction rate and income, differences across minority-share groups, and the highest-rate tracts. The dashboard is designed to go beyond the static plots by enabling interactive subgroup comparison, variable switching, and diagnostic checks for extreme values.
+
+3. Results from Static Visualizations
+
+3.1 Spatial concentration: The choropleth map shows that higher eviction filing rates are concentrated in parts of the South and West sides of Chicago, while many North Side tracts fall into lower-rate groups. This indicates that eviction filings are spatially clustered rather than evenly distributed across the city.
+
+3.2 Income relationship: The scatter plot shows a clear negative relationship between eviction filing rate and median household income. Lower-income tracts tend to have higher eviction filing rates, while higher-income tracts generally have lower rates. This pattern is consistent even with variation across individual tracts.
+
+3.3 Minority-share quartiles: The boxplot groups tracts into quartiles by minority share and compares eviction filing rates across those groups. Tracts in the highest minority-share quartile have higher eviction filing rates than tracts in the lowest quartile, suggesting eviction pressure is associated with economic disadvantage and patterns of neighborhood inequality.
+
+3.4 Highest-eviction tracts: The hotspot ranking lists the tracts with the highest eviction filing rates and summarizes their neighborhood characteristics. Many of these tracts also have lower incomes and higher minority shares than the citywide baseline. This ranking makes the map results more actionable by identifying tracts where eviction filing pressure is most severe.
+
+\begin{figure}[H]
+\centering
+\setlength{\tabcolsep}{6pt}
+
+\begin{minipage}{0.47\linewidth}
+\centering
+\includegraphics[width=0.7\linewidth]{figures/plot_1_choropleth_eviction_rate_2019.png}
+\end{minipage}\hfill
+\begin{minipage}{0.47\linewidth}
+\centering
+\includegraphics[width=\linewidth]{figures/plot_2_scatter_eviction_vs_income.png}
+\end{minipage}
+
+\vspace{0pt}
+
+\begin{minipage}{0.47\linewidth}
+\centering
+\includegraphics[width=0.7\linewidth]{figures/plot_3_boxplot_eviction_by_minority_quartile.png}
+\end{minipage}\hfill
+\begin{minipage}{0.47\linewidth}
+\centering
+\includegraphics[width=\linewidth]{figures/plot_4_top_tracts_hotspot_context.png}
+\end{minipage}
+
+\end{figure}
+
+4. Interactive Dashboard (Streamlit App)
+
+We developed a Streamlit dashboard to support exploratory analysis beyond the static figures. The dashboard includes:
+
+- An interactive tract-level map of eviction filing rates that updates with user-selected filters.
+
+- An interactive scatter plot where users can switch the x-axis variable across median household income, poverty rate, and minority share. This reduces redundancy across separate plots and lets users compare relationships using the same interface.
+
+- A table of top tracts by eviction filing rate for the currently filtered subset.
+
+- Filters designed for subgroup comparison and interpretability, including income range and minority share range. We use a minority-share range rather than a one-sided cutoff to support direct comparison between low- and high-minority neighborhoods.
+
+- A minimum renter-households filter (default: 200) uses renter households as the denominator of the eviction filing rate and improves stability by reducing the influence of very small denominators that can inflate rates.
+
+- An “extreme tract check” that identifies the tract with the maximum observed eviction filing rate (around 28%). The dashboard displays this tract’s filings count and renter-household denominator so users can interpret unusually high rates more carefully.
+
+Overall, the dashboard provides added analytic value by supporting subgroup exploration, variable switching, and extreme-value diagnostics, rather than simply reproducing the static plots.
+
+5. Policy Implications: Because the analysis is descriptive, we do not claim tract characteristics cause eviction filings. However, the hotspot ranking and the dashboard identify where filing rates are most concentrated and can support targeting and prioritization. Agencies and community organizations could use the identified high-rate tracts to help prioritize tenant legal aid outreach, eviction diversion programs, and other housing-stability resources. The tract list also provides a starting point for follow-up monitoring and local context review.
+
+6. Limitations or Challenges: This analysis is descriptive and cannot establish causal effects. We focus on 2019 only, which provides a clear snapshot but does not capture time dynamics. Eviction filings are not the same as completed evictions, so filings may overstate displacement. We also rely on tract-level measures (including ACS estimates) that carry sampling error and may not reflect within-tract variation. Finally, while the dashboard supports exploration and diagnostics, conclusions remain constrained by the scope and measurement limits of the underlying data.
+
+```{python}
+#| echo: false
+
+# Preprocessing Code
+from pathlib import Path
+import json
+import pandas as pd
+import geopandas as gpd
+import altair as alt
+
+import warnings
+warnings.filterwarnings('ignore')
+alt.data_transformers.disable_max_rows()
+import vl_convert as vlc
+from IPython.display import SVG, display, Image
+import tempfile
+alt.renderers.enable("png")
+
+# repository directory: current working directory
+REPO_DIR = Path.cwd()
+# raw data directory: data/raw-data/
+RAW_DIR = REPO_DIR / "data" / "raw-data"
+# derived data directory: data/derived-data/
+DERIVED_DIR = REPO_DIR / "data" / "derived-data"
+
+# helper function to save an Altair chart as a high-resolution PNG
+def save_altair_png(chart, out_path, scale=3):
+    # convert the chart to a PNG bytes object
+    png_bytes = vlc.vegalite_to_png(chart.to_dict(), scale=scale)
+    # save the PNG bytes to a file
+    with open(out_path, "wb") as f:
+        f.write(png_bytes)
+
+# helper function to read a shapefile
+def _read_shapefile(shp_path: Path):
+    # try to read the shapefile using the default engine
+    try:
+        return gpd.read_file(shp_path)
+    except Exception:
+        # if the default engine fails, try using the pyogrio engine
+        return gpd.read_file(shp_path, engine="pyogrio")
+
+# load the eviction data for the year 2019
+def load_eviction_tract_2019():
+    # path to the eviction data: data/raw-data/eviction_data_tract.csv
+    path = RAW_DIR / "eviction_data_tract.csv"
+    # read the eviction data into a pandas dataframe
+    df = pd.read_csv(path, dtype={"tract": str})
+
+    # filter the dataframe to only include the year 2019
+    df = df.loc[df["filing_year"] == 2019].copy()
+    
+    # keep only the columns we need
+    keep_cols = [
+        "tract",
+        "filing_year",
+        "eviction_filings_total",
+        "eviction_filings_rate",
+    ]
+    return df[keep_cols].copy()
+
+# load the census covariates
+def load_census_covariates():
+    # path to the census data: data/raw-data/census_data_tract.csv
+    path = RAW_DIR / "census_data_tract.csv"
+    # read the census data into a pandas dataframe
+    df = pd.read_csv(path, dtype={"tract": str})
+
+    # filter the dataframe to only include the year 2014-2018 5-year estimates
+    df = df.loc[df["census_year"] == "2014-2018 5-year estimates"].copy()
+    
+    # keep only the numeric columns
+    numeric_cols = [
+        "housing_units_total",
+        "housing_units_rental",
+        "housing_units_other",
+        "median_rent",
+        "population_total",
+        "population_poverty_below",
+        "population_poverty_above",
+        "population_race_white",
+        "population_race_black",
+        "population_race_latinx",
+        "population_race_asian",
+        "population_race_other",
+    ]
+    # convert the numeric columns to numeric data types
+    for col in numeric_cols:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    # calculate the poverty rate
+    df["poverty_rate"] = df["population_poverty_below"] / df["population_total"]
+    # calculate the percentage of the population that is black
+    df["pct_black"] = df["population_race_black"] / df["population_total"]
+    # calculate the percentage of the population that is latinx
+    df["pct_latinx"] = df["population_race_latinx"] / df["population_total"]
+    # calculate the minority share
+    df["minority_share"] = (
+        df["population_race_black"]
+        + df["population_race_latinx"]
+        + df["population_race_asian"]
+        + df["population_race_other"]
+    ) / df["population_total"]
+
+    # keep only the columns we need
+    keep_cols = [
+        "tract",
+        "census_year",
+        "housing_units_rental",
+        "median_rent",
+        "population_total",
+        "population_poverty_below",
+        "poverty_rate",
+        "pct_black",
+        "pct_latinx",
+        "minority_share",
+    ]
+    return df[keep_cols].copy()
+
+# load the income data
+def load_income_b19013():
+    # path to the income data: data/raw-data/ACSDT5Y2019.B19013-Data.csv
+    path = RAW_DIR / "ACSDT5Y2019.B19013-Data.csv"
+    # read the income data into a pandas dataframe
+    df = pd.read_csv(path, dtype=str)
+
+    # Drop the first metadata row: Geography column
+    df = df.loc[df["GEO_ID"] != "Geography"].copy()
+
+    # extract the tract from the GEO_ID column by removing the first characters (1400000US)
+    df["tract"] = df["GEO_ID"].str.replace("1400000US", "", regex=False)
+    # convert the median household income to a numeric data type
+    df["median_household_income"] = pd.to_numeric(df["B19013_001E"], errors="coerce")
+
+    return df[["tract", "median_household_income"]].copy()
+
+# load the chicago crosswalk
+def load_chicago_crosswalk():
+    # path to the chicago crosswalk: data/raw-data/census_tract_crosswalk_chicago.csv
+    path = RAW_DIR / "census_tract_crosswalk_chicago.csv"
+    # read the chicago crosswalk into a pandas dataframe
+    df = pd.read_csv(path, dtype={"census_tract": str})
+    # rename the census tract column to tract
+    df = df.rename(columns={"census_tract": "tract"})
+    # keep only the columns we need
+    keep_cols = [c for c in ["tract", "place", "partial", "housing_percent", "pop_percent"] if c in df.columns]
+    
+    return df[keep_cols].copy()
+
+# load the tract geometry
+def load_tract_geometry():
+    # path to the tract geometry: data/raw-data/tl_2019_17_tract.shp
+    shp_path = RAW_DIR / "tl_2019_17_tract.shp"
+    # read the tract geometry into a geopandas dataframe
+    gdf = _read_shapefile(shp_path)
+
+    # extract the tract from the GEOID column
+    gdf["tract"] = gdf["GEOID"].astype(str)
+    
+    # keep only the columns we need
+    keep_cols = ["tract", "STATEFP", "COUNTYFP", "TRACTCE", "GEOID", "geometry"]
+    keep_cols = [c for c in keep_cols if c in gdf.columns]
+    
+    return gdf[keep_cols].copy()
+
+# build the analytic dataframe by merging the eviction, census, income, and chicago crosswalk dataframes
+def build_analytic_dataframe():
+    # load the eviction data
+    eviction = load_eviction_tract_2019()
+    # load the census data
+    census = load_census_covariates()
+    # load the income data
+    income = load_income_b19013()
+    # load the chicago crosswalk
+    chicago_xwalk = load_chicago_crosswalk()
+
+    # merge the eviction, census, income
+    df = eviction.merge(census, on="tract", how="inner")
+    df = df.merge(income, on="tract", how="inner")
+
+    # filter to Chicago tracts via crosswalk if available
+    # merge the chicago crosswalk with the dataframe on the tract column
+    if "tract" in chicago_xwalk.columns:
+        df = df.merge(chicago_xwalk[["tract"]].drop_duplicates(), on="tract", how="inner")
+
+    # keep only the columns we need
+    core_cols = [
+        "eviction_filings_total",
+        "eviction_filings_rate",
+        "median_household_income",
+        "poverty_rate",
+        "pct_black",
+        "pct_latinx",
+        "minority_share",
+    ]
+    # drop rows with missing values in the core columns
+    df = df.dropna(subset=core_cols).copy()
+
+    return df
+
+# build the analytic geodataframe by merging the analytic dataframe with the tract geometry
+def build_analytic_geodataframe():
+    # build the analytic dataframe
+    df = build_analytic_dataframe()
+    # load the tract geometry
+    tracts = load_tract_geometry()
+    
+    # merge the analytic dataframe with the tract geometry on the tract column
+    gdf = tracts.merge(df, on="tract", how="inner")
+    # convert the dataframe to a geopandas dataframe
+    gdf = gpd.GeoDataFrame(gdf, geometry="geometry", crs=tracts.crs)
+
+    return gdf
+
+# save the processed outputs to the derived data directory
+def save_processed_outputs():
+    # build the analytic dataframe
+    df = build_analytic_dataframe()
+    # build the analytic geodataframe
+    gdf = build_analytic_geodataframe()
+
+    # path to the csv file: data/derived-data/chicago_eviction_analytic_2019.csv
+    csv_path = DERIVED_DIR / "chicago_eviction_analytic_2019.csv"
+    # path to the geojson file: data/derived-data/chicago_eviction_analytic_2019.geojson
+    geojson_path = DERIVED_DIR / "chicago_eviction_analytic_2019.geojson"
+    # path to the json file: data/derived-data/chicago_eviction_analytic_2019.json
+    json_path = DERIVED_DIR / "chicago_eviction_analytic_2019.json"
+
+    # We asked AI how to save csv, geojson, and json files. It suggested using the to_csv, to_file, and json.dump methods.
+    # save the dataframe to a csv file
+    df.to_csv(csv_path, index=False)
+    # save the geodataframe to a geojson file
+    gdf.to_file(geojson_path, driver="GeoJSON")
+    # save the geodataframe to a json file
+    with open(json_path, "w") as f:
+        json.dump(json.loads(gdf.to_json()), f)
+
+    # print the saved files
+    # print(f"Saved: {csv_path}")
+    # print(f"Saved: {geojson_path}")
+    # print(f"Saved: {json_path}")
+
+# main function to save the processed outputs
+if __name__ == "__main__":
+    save_processed_outputs()
+```
+
+```{python}
+#| echo: false
+
+# Plot 1 Choropleth Eviction Rate 2019 Code
+from pathlib import Path
+import pandas as pd
+import geopandas as gpd
+import matplotlib.pyplot as plt
+
+# repository directory: current working directory
+REPO_DIR = Path.cwd()
+# derived data directory: data/derived-data/
+DERIVED_DIR = REPO_DIR / "data" / "derived-data"
+# figures directory: figures/
+FIG_DIR = REPO_DIR / "figures"
+# create the figures directory if it doesn't exist
+FIG_DIR.mkdir(parents=True, exist_ok=True)
+
+# main function to plot the choropleth map of the eviction filing rate
+def main():
+    # load processed tract-level spatial dataset
+    gdf_path = DERIVED_DIR / "chicago_eviction_analytic_2019.geojson"
+    # read the geojson file into a geopandas dataframe
+    gdf = gpd.read_file(gdf_path)
+
+    # create quintile labels
+    quintile_labels = [
+        "Q1 (Lowest)",
+        "Q2",
+        "Q3",
+        "Q4",
+        "Q5 (Highest)"
+    ]
+
+    # create a new column of eviction filing rate quintiles with the quintile labels
+    gdf["rate_quantile"] = pd.qcut(
+        gdf["eviction_filings_rate"],
+        q=5,
+        labels=quintile_labels,
+        duplicates="drop"
+    )
+
+    # make the rate_quantile column a categorical column
+    gdf["rate_quantile"] = pd.Categorical(
+        gdf["rate_quantile"],
+        categories=quintile_labels,
+        ordered=True
+    )
+
+    # create a figure and axis
+    fig, ax = plt.subplots(figsize=(10, 10))
+
+    # plot the choropleth map of the eviction filing rate
+    gdf.plot(
+        column="rate_quantile",
+        categorical=True,
+        cmap="GnBu",
+        legend=True,
+        linewidth=0.25,
+        edgecolor="#c7c7c7", # light gray borders
+        ax=ax,
+        legend_kwds={"title": "Eviction Rate Quintile"} # legend title
+    )
+
+    # set the title and font size
+    ax.set_title(
+        "Eviction Filing Rate Quintiles Across Chicago Census Tracts (2019)",
+        fontsize=15,
+        pad=14
+    )
+    ax.set_axis_off()
+
+    plt.tight_layout()
+    # path to the figure: figures/plot_1_choropleth_eviction_rate_2019.png
+    out_path = FIG_DIR / "plot_1_choropleth_eviction_rate_2019.png"
+    # save the figure to the figures directory
+    plt.savefig(out_path, dpi=300, bbox_inches="tight")
+    plt.close()
+
+    # print the saved figure
+    # print(f"Saved: {out_path}")
+
+# main function to run the script
+if __name__ == "__main__":
+    main()
+```
+
+```{python}
+#| echo: false
+
+# Plot 2 Scatter Eviction vs Income Code
+from pathlib import Path
+import pandas as pd
+import altair as alt
+
+# repository directory: current working directory
+REPO_DIR = Path.cwd()
+# derived data directory: data/derived-data/
+DERIVED_DIR = REPO_DIR / "data" / "derived-data"
+# figures directory: figures/
+FIG_DIR = REPO_DIR / "figures"
+
+# main function to plot the scatter plot of the eviction filing rate versus median household income
+def main():
+    # load data
+    df_path = DERIVED_DIR / "chicago_eviction_analytic_2019.csv"
+    df = pd.read_csv(df_path)
+
+    # keep only the columns we need and drop missing values
+    df = df[["median_household_income", "eviction_filings_rate"]].dropna().copy()
+
+    # create tooltip label columns
+    df["income_label"] = "$" + df["median_household_income"].round(0).astype(int).map("{:,}".format)
+    df["eviction_rate_label"] = df["eviction_filings_rate"].round(0).astype(int).astype(str) + "%"
+
+    # create a scatter plot
+    points = alt.Chart(df).mark_circle(size=45, opacity=0.55).encode(
+        x=alt.X(
+            "median_household_income:Q",
+            title="Median Household Income ($)",
+            scale=alt.Scale(zero=False),
+            axis=alt.Axis(labelExpr="'$' + format(datum.value, ',.0f')")
+        ),
+        y=alt.Y(
+            "eviction_filings_rate:Q",
+            title="Eviction Filing Rate (%)",
+            scale=alt.Scale(zero=False),
+            axis=alt.Axis(labelExpr="datum.value + '%'")
+        ),
+        tooltip=[
+            alt.Tooltip("income_label:N", title="Income"),
+            alt.Tooltip("eviction_rate_label:N", title="Eviction rate")
+        ]
+    )
+
+    # create a linear trend line
+    trend = alt.Chart(df).transform_regression(
+        "median_household_income",
+        "eviction_filings_rate"
+    ).mark_line(size=3).encode(
+        x="median_household_income:Q",
+        y="eviction_filings_rate:Q"
+    )
+
+    # create a chart
+    chart = (points + trend).properties(
+        title="Eviction Filing Rate vs Median Household Income (Chicago Tracts, 2019)",
+        width=720,
+        height=480,
+    ).configure_title(
+        fontSize=18
+    ).configure_axis(
+        titleFontSize=13,
+        labelFontSize=11
+    )
+
+    # path to the figure: figures/plot_2_scatter_eviction_vs_income.png
+    out_path = FIG_DIR / "plot_2_scatter_eviction_vs_income.png"
+
+    # save the chart to the figures directory
+    save_altair_png(chart, out_path, scale=3)
+    # print(f"Saved PNG: {out_path}")
+
+# main function to run the script
+if __name__ == "__main__":
+    main()
+```
+
+```{python}
+#| echo: false
+
+# Plot 3 Boxplot Eviction by Minority Quartile Code
+from pathlib import Path
+import pandas as pd
+import altair as alt
+
+# repository directory: current working directory
+REPO_DIR = Path.cwd()
+# derived data directory: data/derived-data/
+DERIVED_DIR = REPO_DIR / "data" / "derived-data"
+# figures directory: figures/
+FIG_DIR = REPO_DIR / "figures"
+
+# main function to plot the boxplot of the eviction filing rate by minority share quartile
+def main():
+    # load data
+    df_path = DERIVED_DIR / "chicago_eviction_analytic_2019.csv"
+    df = pd.read_csv(df_path)
+
+    # required columns
+    df = df.dropna(subset=["minority_share", "eviction_filings_rate"]).copy()
+
+    # if minority_share is stored as 0.28, convert it to 28 for nicer display
+    if df["minority_share"].max() <= 1:
+        df["minority_share_display"] = df["minority_share"] * 100
+    else:
+        df["minority_share_display"] = df["minority_share"]
+
+    # ordered minority-share quartiles
+    q_labels = [
+        "Q1 (Lowest minority share)",
+        "Q2",
+        "Q3",
+        "Q4 (Highest minority share)",
+    ]
+
+    # create a new column of minority share quartiles
+    df["minority_quartile"] = pd.qcut(
+        df["minority_share"],
+        q=4,
+        labels=q_labels,
+        duplicates="drop",
+    )
+
+    # drop rows with missing values in the minority quartile column
+    df = df.dropna(subset=["minority_quartile"]).copy()
+
+    # make the minority quartile column a categorical column
+    df["minority_quartile"] = pd.Categorical(
+        df["minority_quartile"],
+        categories=q_labels,
+        ordered=True,
+    )
+
+    # make a boxplot chart
+    chart = alt.Chart(df).mark_boxplot(size=60, extent=1.5).encode(
+        x=alt.X(
+            "minority_quartile:N",
+            title="Minority Share Quartile",
+            sort=q_labels,
+            axis=alt.Axis(labelAngle=0),
+        ),
+        y=alt.Y(
+            "eviction_filings_rate:Q",
+            title="Eviction Filing Rate (%)",
+            scale=alt.Scale(zero=True),
+            axis=alt.Axis(labelExpr="datum.value + '%'"),
+        ),
+        tooltip=[
+            alt.Tooltip("minority_share_display:Q", title="Minority share", format=".0f"),
+            alt.Tooltip("eviction_filings_rate:Q", title="Eviction rate", format=".0f"),
+        ],
+    ).properties(
+        title="Eviction Filing Rate by Minority-Share Quartile (Chicago Tracts, 2019)",
+        width=740,
+        height=430,
+    ).configure_title(
+        fontSize=18,
+        anchor="middle"
+    ).configure_axis(
+        titleFontSize=13,
+        labelFontSize=11,
+        grid=True,
+        gridColor="#e6e6e6"
+    ).configure_view(stroke=None)
+
+    out_path = FIG_DIR / "plot_3_boxplot_eviction_by_minority_quartile.png"
+    save_altair_png(chart, out_path, scale=3)
+    # print(f"Saved: {out_path}")
+
+if __name__ == "__main__":
+    main()
+```
+
+```{python}
+#| eval: false
+#| echo: false
+
+# Plot 4 Top Tracts Hotspot Context Code
+from pathlib import Path
+import pandas as pd
+import altair as alt
+
+# repository directory: current working directory
+REPO_DIR = Path.cwd()
+# derived data directory: data/derived-data/
+DERIVED_DIR = REPO_DIR / "data" / "derived-data"
+# figures directory: figures/
+FIG_DIR = REPO_DIR / "figures"
+
+# main function to plot the bar chart of the top 10 tracts by eviction filing rate
+def main():
+    # load data
+    df_path = DERIVED_DIR / "chicago_eviction_analytic_2019.csv"
+    df = pd.read_csv(df_path)
+
+    # city medians for context
+    chicago_income_median = df["median_household_income"].median()
+    chicago_poverty_median = df["poverty_rate"].median()
+    chicago_minority_median = df["minority_share"].median()
+
+    # top 10 tracts by eviction filing rate
+    top_n = 10
+    top = (
+        df.sort_values("eviction_filings_rate", ascending=False)
+        .head(top_n)
+        .copy()
+    )
+
+    # create annotation text for each tract
+    top["context_label"] = top.apply(
+        lambda row: (
+            f"Income ${row['median_household_income']:,.0f} | "
+            f"Poverty {row['poverty_rate']:.1%} | "
+            f"Minority {row['minority_share']:.1%}"
+        ),
+        axis=1
+    )
+
+    # make the tract column a string column
+    top["tract"] = top["tract"].astype(str)
+
+    # create label columns for tooltip
+    top["eviction_rate_label"] = top["eviction_filings_rate"].round(0).astype(int).astype(str) + "%"
+    top["income_label"] = "$" + top["median_household_income"].round(0).astype(int).map("{:,}".format)
+    top["poverty_label"] = (top["poverty_rate"] * 100).round(0).astype(int).astype(str) + "%"
+    top["minority_label"] = (top["minority_share"] * 100).round(0).astype(int).astype(str) + "%"
+
+    # create a bar chart
+    bars = alt.Chart(top).mark_bar().encode(
+        x=alt.X(
+            "eviction_filings_rate:Q",
+            title="Eviction Filing Rate (%)",
+            axis=alt.Axis(labelExpr="datum.value + '%'")
+        ),
+        y=alt.Y(
+            "tract:N",
+            sort=list(top["tract"]),
+            title="Census Tract"
+        ),
+        tooltip=[
+            alt.Tooltip("tract:N", title="Tract"),
+            alt.Tooltip("eviction_rate_label:N", title="Eviction rate"),
+            alt.Tooltip("income_label:N", title="Income"),
+            alt.Tooltip("poverty_label:N", title="Poverty"),
+            alt.Tooltip("minority_label:N", title="Minority share"),
+        ],
+    )
+
+    # text labels to the right of bars
+    text = alt.Chart(top).mark_text(
+        align="left",
+        baseline="middle",
+        dx=5,
+        fontSize=11
+    ).encode(
+        x=alt.X("eviction_filings_rate:Q"),
+        y=alt.Y("tract:N", sort=list(top["tract"])),
+        text="context_label:N"
+    )
+
+    # create a chart
+    chart = (bars + text).properties(
+        title="Top 10 Chicago Census Tracts by Eviction Filing Rate (2019)",
+        width=760,
+        height=420
+    ).configure_title(
+        fontSize=18,
+        anchor="middle"
+    ).configure_axis(
+        titleFontSize=13,
+        labelFontSize=11,
+        grid=True,
+        gridColor="#e6e6e6",
+        domainColor="#888888",
+        tickColor="#888888"
+    ).configure_view(stroke=None)
+
+    # path to the figure: figures/plot_4_top_tracts_hotspot_context.png
+    out_path = FIG_DIR / "plot_4_top_tracts_hotspot_context.png"
+
+    # save the chart to the figures directory
+    save_altair_png(chart, out_path, scale=3)
+    # print(f"Saved PNG: {out_path}")
+
+    # also print city medians for reference
+    print(
+        f"Chicago medians — Income: ${chicago_income_median:,.0f}, "
+        f"Poverty: {chicago_poverty_median:.1%}, "
+        f"Minority share: {chicago_minority_median:.1%}"
+    )
+
+# main function to run the script
+if __name__ == "__main__":
+    main()
+```
+
+```{python}
+#| eval: false
+#| echo: false
+
+# Streamlit App Code
+from pathlib import Path
+import json
+import pandas as pd
+import streamlit as st
+import plotly.express as px
+
+# repository directory: current working directory
+REPO_DIR = Path.cwd()
+# derived data directory: data/derived-data/
+DERIVED_DIR = REPO_DIR / "data" / "derived-data"
+
+# set the page config
+st.set_page_config(page_title="Chicago Eviction Dashboard", layout="wide")
+
+# cache the data
+@st.cache_data
+# function to load the data
+def load_data():
+    # load the csv file into a pandas dataframe
+    df = pd.read_csv(DERIVED_DIR / "chicago_eviction_analytic_2019.csv")
+    # load the json file into a python dictionary
+    with open(DERIVED_DIR / "chicago_eviction_analytic_2019.json", "r") as f:
+        geojson = json.load(f)
+
+    # make the tract column a string column
+    df["tract"] = df["tract"].astype(str)
+
+    return df, geojson
+
+# main function to run the app
+def main():
+    # write the title of the dashboard
+    st.title("Chicago Eviction Filing Dashboard (2019)")
+    # write the description of the dashboard
+    st.write(
+        "This dashboard explores whether eviction filing rates are higher in lower-income "
+        "and higher-minority census tracts in Chicago. Use the controls to explore patterns "
+        "and inspect extreme tracts."
+    )
+
+    # load the data
+    df, geojson = load_data()
+
+    # sidebar filters
+    st.sidebar.header("Filters")
+
+    # income filter
+    income_min = int(df["median_household_income"].min())
+    income_max = int(df["median_household_income"].max())
+    income_range = st.sidebar.slider(
+        "Median household income range",
+        min_value=income_min,
+        max_value=income_max,
+        value=(income_min, int(df["median_household_income"].quantile(0.90))), # default value is the 90th percentile
+        step=1000,
+    )
+
+    # minority share range
+    minority_range = st.sidebar.slider(
+        "Minority share range",
+        min_value=0.0,
+        max_value=1.0,
+        value=(0.0, 1.0), # default value is from 0.0 to 1.0
+        step=0.01,
+    )
+
+    # denominator filter to check for stability
+    # set the default value to the 95th percentile of the renter households
+    renters_max = int(df["housing_units_rental"].quantile(0.95))
+    min_renters = st.sidebar.slider(
+        "Minimum renter households (stability filter)",
+        min_value=0,
+        max_value=max(100, renters_max),
+        value=200, # default value is 200
+        step=50,
+    )
+
+    # apply filters to the dataframe
+    filtered = df[
+        (df["median_household_income"].between(income_range[0], income_range[1]))
+        & (df["minority_share"].between(minority_range[0], minority_range[1]))
+    ].copy()
+
+    # apply the denominator filter to the filtered dataframe
+    filtered = filtered[filtered["housing_units_rental"] >= min_renters].copy()
+
+    # summary metrics
+    st.subheader("Filtered Summary")
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Tracts shown", f"{len(filtered):,}")
+    c2.metric("Mean eviction rate", f"{filtered['eviction_filings_rate'].mean():.3f}%")
+    c3.metric("Median income", f"${filtered['median_household_income'].median():,.0f}")
+    c4.metric("Median minority share", f"{filtered['minority_share'].median():.1%}")
+
+    # extreme tract check
+    st.subheader("Extreme Tract Check")
+    top1 = df.sort_values("eviction_filings_rate", ascending=False).head(1).copy()
+
+    # columns to show in the table
+    show_cols = [
+        "tract",
+        "eviction_filings_rate",
+        "eviction_filings_total",
+        "housing_units_rental",
+        "median_household_income",
+        "poverty_rate",
+        "minority_share",
+    ]
+    # keep only the columns that are in the dataframe
+    show_cols = [c for c in show_cols if c in df.columns]
+    # write the highest eviction filing rate tract in the dataset
+    st.write("Highest eviction filing rate tract in the dataset (2019):")
+    # write the table of the highest eviction filing rate tract in the dataset
+    st.dataframe(top1[show_cols], width="stretch")
+
+    # note for interpretation of the extreme tract check
+    st.caption(
+        "Note: Very high eviction filing rates can occur when renter-household denominators are small. "
+        "Use the stability filter in the sidebar to focus on tracts with larger denominators."
+    )
+
+    # interactive map
+    st.subheader("Interactive Map")
+
+    # use p95 to avoid one extreme tract dominating the color scale
+    if len(filtered) > 0:
+        p95 = filtered["eviction_filings_rate"].quantile(0.95)
+    else:
+        p95 = 1.0 # default value is 1.0
+
+    # create a choropleth map
+    fig_map = px.choropleth_map(
+        filtered,
+        geojson=geojson,
+        locations="tract",
+        featureidkey="properties.tract",
+        color="eviction_filings_rate",
+        range_color=(0, p95),
+        hover_data={
+            "tract": True,
+            "eviction_filings_total": True,
+            "eviction_filings_rate": ":.3f",
+            "median_household_income": ":,.0f",
+            "poverty_rate": ":.2%",
+            "minority_share": ":.2%",
+            "pct_black": ":.2%",
+            "pct_latinx": ":.2%",
+            "housing_units_rental": True,
+        },
+        zoom=9.2,
+        center={"lat": 41.8781, "lon": -87.6298},
+        opacity=0.7,
+    )
+    # update the layout of the choropleth map
+    fig_map.update_layout(margin={"r": 0, "t": 0, "l": 0, "b": 0})
+    # plot the choropleth map
+    st.plotly_chart(fig_map, width="stretch")
+
+    # interactive scatter with selectable x-variable
+    st.subheader("Interactive Scatter")
+
+    # select the x-axis variable from three options
+    x_choice = st.selectbox(
+        "Choose x-axis variable",
+        options=[
+            "median_household_income",
+            "poverty_rate",
+            "minority_share",
+        ],
+        format_func=lambda x: {
+            "median_household_income": "Median Household Income",
+            "poverty_rate": "Poverty Rate",
+            "minority_share": "Minority Share",
+        }[x],
+    )
+
+    # set the label for the x-axis variable
+    x_label = {
+        "median_household_income": "Median Household Income (ACS 5-year, B19013)",
+        "poverty_rate": "Poverty Rate",
+        "minority_share": "Minority Share",
+    }[x_choice]
+
+    # create a scatter plot
+    fig_scatter = px.scatter(
+        filtered,
+        x=x_choice,
+        y="eviction_filings_rate",
+        hover_data={
+            "tract": True,
+            "eviction_filings_total": True,
+            "housing_units_rental": True,
+            "median_household_income": ":,.0f",
+            "poverty_rate": ":.2%",
+            "minority_share": ":.2%",
+        },
+        labels={
+            x_choice: x_label,
+            "eviction_filings_rate": "Eviction Filing Rate",
+        },
+    )
+    # update the layout of the scatter plot
+    fig_scatter.update_layout(margin={"r": 20, "t": 20, "l": 20, "b": 20})
+    # plot the scatter plot
+    st.plotly_chart(fig_scatter, width="stretch")
+
+    # top tracts table
+    st.subheader("Top Tracts by Eviction Filing Rate (Filtered)")
+    # create a dataframe of the top 15 tracts by eviction filing rate
+    top = (
+        filtered.sort_values("eviction_filings_rate", ascending=False)
+        .head(15)[show_cols]
+        .reset_index(drop=True)
+    )
+    # write the table of the top 15 tracts by eviction filing rate
+    st.dataframe(top, width="stretch")
+
+# main function to run the app
+if __name__ == "__main__":
+    main()
+```
