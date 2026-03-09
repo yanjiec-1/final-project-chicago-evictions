@@ -12,81 +12,82 @@ DERIVED_DIR = REPO_DIR / "data" / "derived-data"
 # figures directory: figures/
 FIG_DIR = REPO_DIR / "figures"
 
-# main function to plot the boxplot of the eviction filing rate by poverty quartile
+# main function to plot the boxplot of the eviction filing rate by minority share quartile
 def main():
     # load data
     df_path = DERIVED_DIR / "chicago_eviction_analytic_2019.csv"
-    # read the csv file into a pandas dataframe
     df = pd.read_csv(df_path)
 
-    # create poverty quartiles
-    full_labels = [
-        "Q1 (Lowest Poverty)",
+    # required columns
+    df = df.dropna(subset=["minority_share", "eviction_filings_rate"]).copy()
+
+    # if minority_share is stored as 0.28, convert it to 28 for nicer display
+    if df["minority_share"].max() <= 1:
+        df["minority_share_display"] = df["minority_share"] * 100
+    else:
+        df["minority_share_display"] = df["minority_share"]
+
+    # ordered minority-share quartiles
+    q_labels = [
+        "Q1 (Lowest minority share)",
         "Q2",
         "Q3",
-        "Q4 (Highest Poverty)"
+        "Q4 (Highest minority share)",
     ]
 
-    # create a new column of poverty quartiles
-    df["poverty_quantile"] = pd.qcut(
-        df["poverty_rate"],
+    # create a new column of minority share quartiles
+    df["minority_quartile"] = pd.qcut(
+        df["minority_share"],
         q=4,
-        labels=full_labels,
+        labels=q_labels,
         duplicates="drop",
     )
 
-    # drop missing values in the plot
-    df = df.dropna(subset=["poverty_quantile", "eviction_filings_rate"]).copy()
+    # drop rows with missing values in the minority quartile column
+    df = df.dropna(subset=["minority_quartile"]).copy()
 
-    # make the poverty quantile column a categorical column
-    df["poverty_quantile"] = pd.Categorical(
-        df["poverty_quantile"],
-        categories=full_labels,
-        ordered=True
+    # make the minority quartile column a categorical column
+    df["minority_quartile"] = pd.Categorical(
+        df["minority_quartile"],
+        categories=q_labels,
+        ordered=True,
     )
 
-    # create a boxplot
-    chart = alt.Chart(df).mark_boxplot(size=50, extent=1.5).encode(
-            x=alt.X(
-                "poverty_quantile:N",
-                title="Poverty-Rate Quartile",
-                sort=full_labels,
-                axis=alt.Axis(labelAngle=0, labelFontSize=12, titleFontSize=13)
-            ),
-            y=alt.Y(
-                "eviction_filings_rate:Q",
-                title="Eviction Filing Rate",
-                scale=alt.Scale(zero=True),
-                axis=alt.Axis(labelFontSize=12, titleFontSize=13)
-            ),
-        ).properties(
-            title="Eviction Filing Rate by Poverty-Rate Quartile (Chicago Tracts, 2019)",
-            width=720,
-            height=430
-        ).configure_title(
-            fontSize=18,
-            anchor="middle"
-        ).configure_axis(
-            grid=True,
-            gridColor="#e6e6e6",
-            domainColor="#888888",
-            tickColor="#888888"
-        ).configure_view(
-            stroke=None
-        )
+    # make a boxplot chart
+    chart = alt.Chart(df).mark_boxplot(size=60, extent=1.5).encode(
+        x=alt.X(
+            "minority_quartile:N",
+            title="Minority Share Quartile",
+            sort=q_labels,
+            axis=alt.Axis(labelAngle=0),
+        ),
+        y=alt.Y(
+            "eviction_filings_rate:Q",
+            title="Eviction Filing Rate (%)",
+            scale=alt.Scale(zero=True),
+            axis=alt.Axis(labelExpr="datum.value + '%'"),
+        ),
+        tooltip=[
+            alt.Tooltip("minority_share_display:Q", title="Minority share", format=".0f"),
+            alt.Tooltip("eviction_filings_rate:Q", title="Eviction rate", format=".0f"),
+        ],
+    ).properties(
+        title="Eviction Filing Rate by Minority-Share Quartile (Chicago Tracts, 2019)",
+        width=740,
+        height=430,
+    ).configure_title(
+        fontSize=18,
+        anchor="middle"
+    ).configure_axis(
+        titleFontSize=13,
+        labelFontSize=11,
+        grid=True,
+        gridColor="#e6e6e6"
+    ).configure_view(stroke=None)
 
-    # path to the figure: figures/plot_3_boxplot_eviction_by_poverty_quantile.png
-    out_path = FIG_DIR / "plot_3_boxplot_eviction_by_poverty_quantile.png"
-
-    # save the chart to the figures directory
+    out_path = FIG_DIR / "plot_3_boxplot_eviction_by_minority_quartile.png"
     save_altair_png(chart, out_path, scale=3)
-    print(f"Saved PNG: {out_path}")
+    print(f"Saved: {out_path}")
 
-    # save as HTML
-    # html_path = FIG_DIR / "plot_3_boxplot_eviction_by_poverty_quantile.html"
-    # chart.save(html_path)
-    # print(f"Saved HTML: {html_path}")
-
-# main function to run the script
 if __name__ == "__main__":
     main()
