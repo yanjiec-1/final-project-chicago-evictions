@@ -90,7 +90,7 @@ def main():
     st.subheader("Filtered Summary")
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Tracts shown", f"{len(filtered):,}")
-    c2.metric("Mean eviction rate", f"{filtered['eviction_filings_rate'].mean():.3f}")
+    c2.metric("Mean eviction rate", f"{filtered['eviction_filings_rate'].mean():.3f}%")
     c3.metric("Median income", f"${filtered['median_household_income'].median():,.0f}")
     c4.metric("Median minority share", f"{filtered['minority_share'].median():.1%}")
 
